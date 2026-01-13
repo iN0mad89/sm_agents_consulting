@@ -21,7 +21,9 @@ import {
   Server,
   Lock,
   Send,
-  Bot
+  Bot,
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 
 // --- Components ---
@@ -139,13 +141,18 @@ const HeroChat = () => {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isSending, setIsSending] = useState(false); // New state for API simulation
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Improved auto-scroll logic
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
     }
-  }, [messages, isTyping]);
+  }, [messages, isTyping, isSending]);
 
   const sendDataToWebhook = async (data: typeof formData) => {
     // TODO: Insert your n8n Webhook URL here
@@ -163,7 +170,7 @@ const HeroChat = () => {
     console.log('------------------------------');
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
 
     // 1. Add User Message
@@ -171,11 +178,6 @@ const HeroChat = () => {
     const newUserMsg: Message = { id: Date.now(), role: 'user', text: userText };
     setMessages((prev) => [...prev, newUserMsg]);
     setInputValue('');
-    setIsTyping(true);
-
-    // 2. Determine Next Step & Update Data
-    let nextMessageText = '';
-    let nextStep = step + 1;
     
     // Update collected data based on current step
     const updatedData = { ...formData };
@@ -185,26 +187,43 @@ const HeroChat = () => {
     if (step === 3) updatedData.contact = userText;
     setFormData(updatedData);
 
-    // Select next question
-    if (step === 0) {
-      nextMessageText = 'Дуже приємно. Яка сфера вашого бізнесу?';
-    } else if (step === 1) {
-      nextMessageText = 'Який процес ви хочете автоматизувати в першу чергу? (напр. обробка лідів, підтримка, звітність)';
-    } else if (step === 2) {
-      nextMessageText = 'Зафіксував. Останнє: залиште ваш контакт (Telegram або пошта) для детального розрахунку.';
-    } else if (step === 3) {
+    let nextStep = step + 1;
+    let nextMessageText = '';
+
+    // Handle Logic based on Step
+    if (step === 3) {
+      // Final step: Simulate submission
+      setIsSending(true);
+      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate network latency
+      await sendDataToWebhook(updatedData);
+      setIsSending(false);
+      
       nextMessageText = 'Дякую! Дані передано інженерам. Ми зв\'яжемося з вами найближчим часом.';
-      // Trigger data submission
-      sendDataToWebhook(updatedData);
-    } else {
-      // Conversation ended, just a generic reply if they keep typing
-      nextMessageText = 'Ми вже обробляємо ваш запит. Скоро повернемося з відповіддю!';
-      nextStep = step; // Don't increment further
+      
+      // Add final message immediately after "sending" is done
+      setMessages((prev) => [...prev, { 
+        id: Date.now() + 1, 
+        role: 'system', 
+        text: nextMessageText 
+      }]);
+      setStep(nextStep);
+      return;
     }
 
+    // Normal steps: Show typing indicator then message
+    setIsTyping(true);
     setStep(nextStep);
 
-    // 3. Simulate Bot Delay and Response
+    // Select next question
+    if (step === 0) nextMessageText = 'Дуже приємно. Яка сфера вашого бізнесу?';
+    else if (step === 1) nextMessageText = 'Який процес ви хочете автоматизувати в першу чергу? (напр. обробка лідів, підтримка, звітність)';
+    else if (step === 2) nextMessageText = 'Зафіксував. Останнє: залиште ваш контакт (Telegram або пошта) для детального розрахунку.';
+    else {
+      // Fallback
+      nextMessageText = 'Ми вже обробляємо ваш запит.';
+    }
+
+    // Simulate Bot Delay
     setTimeout(() => {
       const responseMsg: Message = { 
         id: Date.now() + 1, 
@@ -213,13 +232,22 @@ const HeroChat = () => {
       };
       setMessages((prev) => [...prev, responseMsg]);
       setIsTyping(false);
-    }, 1200); // 1.2s delay for realism
+    }, 1000); 
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleSendMessage();
     }
+  };
+
+  const resetChat = () => {
+    setStep(0);
+    setMessages([{ id: 1, role: 'system', text: 'Вітаю! Я — Архітектор SMAgents. Як я можу до вас звертатися?' }]);
+    setFormData({ name: '', sphere: '', process: '', contact: '' });
+    setInputValue('');
+    setIsTyping(false);
+    setIsSending(false);
   };
 
   return (
@@ -242,15 +270,24 @@ const HeroChat = () => {
             </div>
             <span className="text-xs font-mono text-gray-400 tracking-wider">SM_AGENT_CORE</span>
           </div>
-          <div className="flex gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-white/10"></div>
-            <div className="w-2 h-2 rounded-full bg-white/10"></div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={resetChat} 
+              className="text-gray-400 hover:text-white transition-colors p-1 rounded hover:bg-white/10"
+              title="Start Over"
+            >
+              <RefreshCw size={14} />
+            </button>
+            <div className="flex gap-1.5 ml-1">
+              <div className="w-2 h-2 rounded-full bg-white/10"></div>
+              <div className="w-2 h-2 rounded-full bg-white/10"></div>
+            </div>
           </div>
         </div>
 
         {/* Chat Body */}
-        <div ref={scrollRef} className="flex-1 p-5 overflow-y-auto space-y-4 custom-scrollbar">
-          <AnimatePresence>
+        <div ref={scrollRef} className="flex-1 p-5 overflow-y-auto space-y-4 custom-scrollbar scroll-smooth">
+          <AnimatePresence mode="popLayout">
             {messages.map((msg) => (
               <motion.div
                 key={msg.id}
@@ -260,9 +297,9 @@ const HeroChat = () => {
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div 
-                  className={`max-w-[85%] rounded-lg p-3 text-sm leading-relaxed ${
+                  className={`max-w-[85%] rounded-lg p-3 text-sm leading-relaxed shadow-lg ${
                     msg.role === 'user' 
-                      ? 'bg-primary/20 text-white border border-primary/20 rounded-tr-none shadow-[0_0_10px_rgba(79,70,229,0.1)]' 
+                      ? 'bg-primary/20 text-white border border-primary/20 rounded-tr-none' 
                       : 'bg-white/5 text-gray-300 border border-white/5 rounded-tl-none'
                   }`}
                 >
@@ -282,15 +319,28 @@ const HeroChat = () => {
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               className="flex items-center gap-1.5 ml-2 p-2"
             >
                <span className="text-xs text-muted font-mono mr-1">Agent is typing</span>
                <div className="flex gap-1">
-                 <div className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
-                 <div className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                 <div className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                 <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
+                 <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                 <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
                </div>
             </motion.div>
+          )}
+
+          {/* Submission Indicator */}
+          {isSending && (
+             <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex items-center gap-2 ml-2 p-2 text-primary"
+             >
+                <Loader2 size={16} className="animate-spin" />
+                <span className="text-xs font-mono">Syncing data to core...</span>
+             </motion.div>
           )}
         </div>
 
@@ -303,14 +353,16 @@ const HeroChat = () => {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={step > 3 ? "Chat completed" : "Type your answer..."}
-            disabled={step > 3 || isTyping}
-            className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder-gray-600 focus:ring-0 disabled:opacity-50"
+            placeholder={step > 3 ? "Chat session completed" : "Type your answer..."}
+            disabled={step > 3 || isTyping || isSending}
+            autoComplete="off"
+            className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder-gray-600 focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <button 
             onClick={handleSendMessage}
-            disabled={step > 3 || isTyping || !inputValue.trim()}
-            className={`p-1.5 rounded-md transition-all ${inputValue.trim() && !isTyping && step <= 3 ? 'text-primary hover:bg-primary/10' : 'text-gray-600 cursor-not-allowed'}`}
+            disabled={step > 3 || isTyping || isSending || !inputValue.trim()}
+            className={`p-1.5 rounded-md transition-all ${inputValue.trim() && !isTyping && !isSending && step <= 3 ? 'text-primary hover:bg-primary/10' : 'text-gray-600 cursor-not-allowed'}`}
+            aria-label="Send message"
           >
             <Send size={16} />
           </button>
@@ -332,6 +384,33 @@ const Navbar = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    e.preventDefault();
+    const targetId = href.replace('#', '');
+    const element = document.getElementById(targetId);
+    
+    // Default to top if href is # or element not found (e.g. logo)
+    if (href === '#' || !targetId) {
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      });
+    } else if (element) {
+      const offset = 80; // Height of the fixed navbar
+      const bodyRect = document.body.getBoundingClientRect().top;
+      const elementRect = element.getBoundingClientRect().top;
+      const elementPosition = elementRect - bodyRect;
+      const offsetPosition = elementPosition - offset;
+
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: 'smooth'
+      });
+    }
+    
+    setIsOpen(false);
+  };
+
   const links = [
     { name: 'Послуги', href: '#services' },
     { name: 'Процес', href: '#process' },
@@ -339,9 +418,13 @@ const Navbar = () => {
   ];
 
   return (
-    <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${isScrolled ? 'bg-background/80 backdrop-blur-md border-b border-white/5 py-4' : 'bg-transparent py-6'}`}>
+    <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${isScrolled ? 'bg-background/90 backdrop-blur-md border-b border-white/5 py-4 shadow-lg' : 'bg-transparent py-6'}`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center">
-        <a href="#" className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+        <a 
+          href="#" 
+          onClick={(e) => scrollToSection(e, '#')}
+          className="text-xl font-bold text-white tracking-tight flex items-center gap-2 cursor-pointer"
+        >
           <div className="w-8 h-8 rounded bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center">
             <span className="text-xs font-mono text-white">SM</span>
           </div>
@@ -351,18 +434,27 @@ const Navbar = () => {
         {/* Desktop Nav */}
         <div className="hidden md:flex items-center space-x-8">
           {links.map((link) => (
-            <a key={link.name} href={link.href} className="text-sm font-medium text-gray-300 hover:text-white transition-colors">
+            <a 
+              key={link.name} 
+              href={link.href} 
+              onClick={(e) => scrollToSection(e, link.href)}
+              className="text-sm font-medium text-gray-300 hover:text-white transition-colors cursor-pointer"
+            >
               {link.name}
             </a>
           ))}
-          <a href="#footer" className="px-4 py-2 text-sm font-medium text-white bg-white/10 hover:bg-white/20 rounded-lg transition-colors border border-white/5">
+          <a 
+            href="#footer" 
+            onClick={(e) => scrollToSection(e, '#footer')}
+            className="px-4 py-2 text-sm font-medium text-white bg-white/10 hover:bg-white/20 rounded-lg transition-colors border border-white/5 cursor-pointer hover:border-white/20"
+          >
             Контакти
           </a>
         </div>
 
         {/* Mobile Menu Button */}
         <div className="md:hidden">
-          <button onClick={() => setIsOpen(!isOpen)} className="text-gray-300 hover:text-white p-2">
+          <button onClick={() => setIsOpen(!isOpen)} className="text-gray-300 hover:text-white p-2" aria-label="Toggle menu">
             {isOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
         </div>
@@ -376,16 +468,16 @@ const Navbar = () => {
               <a 
                 key={link.name} 
                 href={link.href} 
-                className="text-base font-medium text-gray-300 hover:text-white block px-2 py-1"
-                onClick={() => setIsOpen(false)}
+                onClick={(e) => scrollToSection(e, link.href)}
+                className="text-base font-medium text-gray-300 hover:text-white block px-2 py-1 cursor-pointer"
               >
                 {link.name}
               </a>
             ))}
             <a 
               href="#footer" 
-              className="text-base font-medium text-primary block px-2 py-1"
-              onClick={() => setIsOpen(false)}
+              onClick={(e) => scrollToSection(e, '#footer')}
+              className="text-base font-medium text-primary block px-2 py-1 cursor-pointer"
             >
               Контакти
             </a>
