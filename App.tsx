@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { motion, useReducedMotion, Variants } from 'framer-motion';
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, useReducedMotion, Variants, AnimatePresence } from 'framer-motion';
 import {
   Menu,
   X,
@@ -19,12 +19,20 @@ import {
   Terminal,
   Activity,
   Server,
-  Lock
+  Lock,
+  Send,
+  Bot
 } from 'lucide-react';
 
 // --- Components ---
 
-const FadeIn = ({ children, delay = 0, className = "" }: { children: React.ReactNode, delay?: number, className?: string }) => {
+interface FadeInProps {
+  children?: React.ReactNode;
+  delay?: number;
+  className?: string;
+}
+
+const FadeIn: React.FC<FadeInProps> = ({ children, delay = 0, className = "" }) => {
   const shouldReduceMotion = useReducedMotion();
   
   const variants: Variants = {
@@ -56,7 +64,12 @@ const SectionTitle = ({ title, subtitle }: { title: string; subtitle?: string })
   </div>
 );
 
-const Card = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => {
+interface CardProps {
+  children?: React.ReactNode;
+  className?: string;
+}
+
+const Card: React.FC<CardProps> = ({ children, className = "" }) => {
   return (
     <motion.div 
       whileHover={{ y: -4 }}
@@ -69,23 +82,243 @@ const Card = ({ children, className = "" }: { children: React.ReactNode; classNa
   );
 };
 
-const Chip = ({ label }: { label: string }) => (
+interface ChipProps {
+  label: string;
+}
+
+const Chip: React.FC<ChipProps> = ({ label }) => (
   <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-surface border border-white/10 text-muted hover:text-white hover:border-primary/50 transition-colors">
     {label}
   </span>
 );
 
-const PrimaryButton = ({ href, children }: { href: string; children: React.ReactNode }) => (
+interface PrimaryButtonProps {
+  href: string;
+  children?: React.ReactNode;
+}
+
+const PrimaryButton: React.FC<PrimaryButtonProps> = ({ href, children }) => (
   <a 
     href={href}
     target="_blank"
     rel="noreferrer"
-    className="inline-flex items-center justify-center px-6 py-3 text-base font-medium text-white bg-primary hover:bg-primary/90 rounded-lg shadow-[0_0_20px_-5px_rgba(79,70,229,0.5)] transition-all hover:shadow-[0_0_25px_-5px_rgba(79,70,229,0.7)] active:scale-95"
+    className="inline-flex items-center justify-center px-6 py-3 text-base font-medium text-white bg-primary hover:bg-primary/90 rounded-lg shadow-[0_0_20px_-5px_rgba(79,70,229,0.5)] transition-all hover:shadow-[0_0_25px_-5px_rgba(79,70,229,0.7)] active:scale-95 cursor-pointer"
   >
     {children}
     <ExternalLink className="ml-2 w-4 h-4" />
   </a>
 );
+
+// --- Interactive HeroChat Component ---
+
+interface Message {
+  id: number;
+  role: 'system' | 'user';
+  text: string;
+}
+
+const HeroChat = () => {
+  // Scripted conversation steps
+  // 0: Init -> Ask Name
+  // 1: Name provided -> Ask Sphere
+  // 2: Sphere provided -> Ask Process
+  // 3: Process provided -> Ask Contact
+  // 4: Contact provided -> Final Thank You
+  const [step, setStep] = useState(0);
+  
+  // Data collection state
+  const [formData, setFormData] = useState({
+    name: '',
+    sphere: '',
+    process: '',
+    contact: ''
+  });
+
+  const [messages, setMessages] = useState<Message[]>([
+    { id: 1, role: 'system', text: 'Вітаю! Я — Архітектор SMAgents. Як я можу до вас звертатися?' }
+  ]);
+  const [inputValue, setInputValue] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, isTyping]);
+
+  const sendDataToWebhook = async (data: typeof formData) => {
+    // TODO: Insert your n8n Webhook URL here
+    // Example:
+    // try {
+    //   await fetch('https://your-n8n-instance.com/webhook/...', {
+    //     method: 'POST',
+    //     headers: { 'Content-Type': 'application/json' },
+    //     body: JSON.stringify(data)
+    //   });
+    // } catch (e) { console.error('Webhook error', e); }
+    
+    console.log('--- DATA READY FOR WEBHOOK ---');
+    console.log(data);
+    console.log('------------------------------');
+  };
+
+  const handleSendMessage = () => {
+    if (!inputValue.trim()) return;
+
+    // 1. Add User Message
+    const userText = inputValue.trim();
+    const newUserMsg: Message = { id: Date.now(), role: 'user', text: userText };
+    setMessages((prev) => [...prev, newUserMsg]);
+    setInputValue('');
+    setIsTyping(true);
+
+    // 2. Determine Next Step & Update Data
+    let nextMessageText = '';
+    let nextStep = step + 1;
+    
+    // Update collected data based on current step
+    const updatedData = { ...formData };
+    if (step === 0) updatedData.name = userText;
+    if (step === 1) updatedData.sphere = userText;
+    if (step === 2) updatedData.process = userText;
+    if (step === 3) updatedData.contact = userText;
+    setFormData(updatedData);
+
+    // Select next question
+    if (step === 0) {
+      nextMessageText = 'Дуже приємно. Яка сфера вашого бізнесу?';
+    } else if (step === 1) {
+      nextMessageText = 'Який процес ви хочете автоматизувати в першу чергу? (напр. обробка лідів, підтримка, звітність)';
+    } else if (step === 2) {
+      nextMessageText = 'Зафіксував. Останнє: залиште ваш контакт (Telegram або пошта) для детального розрахунку.';
+    } else if (step === 3) {
+      nextMessageText = 'Дякую! Дані передано інженерам. Ми зв\'яжемося з вами найближчим часом.';
+      // Trigger data submission
+      sendDataToWebhook(updatedData);
+    } else {
+      // Conversation ended, just a generic reply if they keep typing
+      nextMessageText = 'Ми вже обробляємо ваш запит. Скоро повернемося з відповіддю!';
+      nextStep = step; // Don't increment further
+    }
+
+    setStep(nextStep);
+
+    // 3. Simulate Bot Delay and Response
+    setTimeout(() => {
+      const responseMsg: Message = { 
+        id: Date.now() + 1, 
+        role: 'system', 
+        text: nextMessageText 
+      };
+      setMessages((prev) => [...prev, responseMsg]);
+      setIsTyping(false);
+    }, 1200); // 1.2s delay for realism
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSendMessage();
+    }
+  };
+
+  return (
+    <div className="relative w-full max-w-lg mx-auto mt-12 perspective-1000 z-20">
+      {/* Background Glow */}
+      <div className="absolute -inset-1 bg-gradient-to-r from-primary to-secondary rounded-2xl blur opacity-20 animate-pulse"></div>
+      
+      <motion.div 
+        initial={{ opacity: 0, y: 40, rotateX: 10 }}
+        animate={{ opacity: 1, y: 0, rotateX: 0 }}
+        transition={{ duration: 0.8, delay: 0.5 }}
+        className="relative bg-[#0F1115]/90 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden shadow-2xl flex flex-col h-[380px]"
+      >
+        {/* Chat Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-white/5 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              <div className="absolute inset-0 bg-green-500 rounded-full animate-ping opacity-75"></div>
+            </div>
+            <span className="text-xs font-mono text-gray-400 tracking-wider">SM_AGENT_CORE</span>
+          </div>
+          <div className="flex gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-white/10"></div>
+            <div className="w-2 h-2 rounded-full bg-white/10"></div>
+          </div>
+        </div>
+
+        {/* Chat Body */}
+        <div ref={scrollRef} className="flex-1 p-5 overflow-y-auto space-y-4 custom-scrollbar">
+          <AnimatePresence>
+            {messages.map((msg) => (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, x: msg.role === 'user' ? 20 : -20, scale: 0.95 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                transition={{ duration: 0.3 }}
+                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div 
+                  className={`max-w-[85%] rounded-lg p-3 text-sm leading-relaxed ${
+                    msg.role === 'user' 
+                      ? 'bg-primary/20 text-white border border-primary/20 rounded-tr-none shadow-[0_0_10px_rgba(79,70,229,0.1)]' 
+                      : 'bg-white/5 text-gray-300 border border-white/5 rounded-tl-none'
+                  }`}
+                >
+                  {msg.role === 'system' && (
+                    <div className="flex items-center gap-2 mb-1 text-[10px] text-primary font-mono uppercase opacity-70">
+                      <Bot size={12} /> Agent
+                    </div>
+                  )}
+                  {msg.text}
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+          
+          {/* Typing Indicator */}
+          {isTyping && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex items-center gap-1.5 ml-2 p-2"
+            >
+               <span className="text-xs text-muted font-mono mr-1">Agent is typing</span>
+               <div className="flex gap-1">
+                 <div className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
+                 <div className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                 <div className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+               </div>
+            </motion.div>
+          )}
+        </div>
+
+        {/* Input Area */}
+        <div className="px-4 py-3 border-t border-white/5 bg-black/20 flex items-center gap-3 shrink-0">
+          <span className="text-primary/70"><Terminal size={16} /></span>
+          <div className="h-4 w-px bg-white/10"></div>
+          <input 
+            type="text" 
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={step > 3 ? "Chat completed" : "Type your answer..."}
+            disabled={step > 3 || isTyping}
+            className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder-gray-600 focus:ring-0 disabled:opacity-50"
+          />
+          <button 
+            onClick={handleSendMessage}
+            disabled={step > 3 || isTyping || !inputValue.trim()}
+            className={`p-1.5 rounded-md transition-all ${inputValue.trim() && !isTyping && step <= 3 ? 'text-primary hover:bg-primary/10' : 'text-gray-600 cursor-not-allowed'}`}
+          >
+            <Send size={16} />
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
 
 // --- Sections ---
 
@@ -165,43 +398,61 @@ const Navbar = () => {
 
 const Hero = () => {
   return (
-    <section className="relative min-h-[90vh] flex items-center pt-20 overflow-hidden">
+    <section className="relative min-h-screen flex flex-col justify-center pt-24 pb-12 overflow-hidden">
       {/* Background Ambience */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-primary/20 rounded-full blur-[120px] opacity-30 animate-pulse" />
-        <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-secondary/10 rounded-full blur-[120px] opacity-20" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-primary/10 rounded-full blur-[120px] opacity-30 animate-pulse" />
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-secondary/5 rounded-full blur-[100px] opacity-20" />
+        
+        {/* Grid Pattern */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:50px_50px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_100%)] pointer-events-none" />
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 w-full">
-        <div className="max-w-4xl">
+        <div className="max-w-4xl mx-auto text-center flex flex-col items-center">
+          
           <FadeIn>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-medium text-primary mb-8">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+              </span>
+              Automating Business Logic
+            </div>
+          </FadeIn>
+
+          <FadeIn delay={0.1}>
             <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold text-white leading-[1.1] mb-6 tracking-tight">
-              Хаос процесів перетворюємо на <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-400">керовану систему.</span>
+              Хаос процесів перетворюємо на <br className="hidden md:block"/>
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-blue-400 to-secondary">керовану систему.</span>
             </h1>
           </FadeIn>
           
           <FadeIn delay={0.2}>
-            <h2 className="text-xl md:text-2xl text-gray-300 mb-6 font-medium">
+            <h2 className="text-xl md:text-2xl text-gray-300 mb-6 font-medium max-w-2xl mx-auto">
               AI-автоматизація бізнесу без зайвих слів.
             </h2>
           </FadeIn>
 
           <FadeIn delay={0.3}>
-            <p className="text-lg text-muted mb-10 max-w-2xl leading-relaxed">
+            <p className="text-lg text-muted mb-8 max-w-2xl mx-auto leading-relaxed">
               Надійна архітектура, яка працює 24/7, поки ви займаєтесь стратегією. Менше ручної рутини, більше контролю та прозорості.
             </p>
           </FadeIn>
 
           <FadeIn delay={0.4}>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
-              <PrimaryButton href="https://www.linkedin.com/in/serhii-mosiiash-a0608a167/">
-                Написати в Linkedin
+            <div className="flex flex-col items-center gap-4">
+              <PrimaryButton href="https://t.me/Agile_SM_Agent_bot">
+                Написати в Telegram
               </PrimaryButton>
-              <p className="text-sm text-gray-500 max-w-xs">
-                Почнемо з короткого брифу: 10–12 запитань → чіткий план і оцінка.
+              <p className="text-sm text-gray-500">
+                Або пройдіть короткий бриф прямо тут 👇
               </p>
             </div>
           </FadeIn>
+
+          <HeroChat />
+
         </div>
       </div>
     </section>
@@ -635,8 +886,8 @@ const FinalCTA = () => {
             Обговоримо вашу задачу. Без зобов’язань. Лише суть.
           </p>
           <div className="flex flex-col items-center gap-4">
-            <PrimaryButton href="https://www.linkedin.com/in/serhii-mosiiash-a0608a167/">
-              Написати в Linkedin
+            <PrimaryButton href="https://t.me/Agile_SM_Agent_bot">
+              Написати в Telegram
             </PrimaryButton>
             <p className="text-sm text-gray-500 mt-4">
               Опишіть 1 процес — ми скажемо, як зробити його стабільним і контрольованим.
